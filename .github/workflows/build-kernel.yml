@@ -19,8 +19,8 @@ on:
         type: boolean
 
 env:
-  KERNEL_REPO: "https://github.com/cctv18/android_kernel_oneplus_sm8750"
-  KERNEL_BRANCH: "oneplus/sm8750_v_16.0.0_oneplus_13_6.6.89"
+  KERNEL_REPO: "https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8750"
+  KERNEL_BRANCH: "oneplus/android16-6.12"
   AK3_REPO: "https://github.com/osm0sis/AnyKernel3"
 
 jobs:
