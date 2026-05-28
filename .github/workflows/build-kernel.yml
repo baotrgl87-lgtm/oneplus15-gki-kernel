@@ -37,9 +37,16 @@ jobs:
     - name: 下载 Clang 工具链
       run: |
         mkdir -p $HOME/clang
-        wget -q "https://github.com/ZyCromerZ/Clang/releases/download/19.0.0git-20250101-release/Clang-19.0.0git-20250101.tar.gz" -O /tmp/clang.tar.gz
-        tar -xzf /tmp/clang.tar.gz -C $HOME/clang --strip-components=1
+        # 使用 AOSP 官方 Clang (稳定可靠)
+        CLANG_VER="r522817"
+        wget -q "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${CLANG_VER}.tar.gz" \
+          -O /tmp/clang.tar.gz || \
+        wget -q "https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/clang+llvm-19.1.7-aarch64-linux-gnu.tar.xz" \
+          -O /tmp/clang.tar.gz
+        tar -xf /tmp/clang.tar.gz -C $HOME/clang --strip-components=1
+        rm /tmp/clang.tar.gz
         echo "PATH=$HOME/clang/bin:$PATH" >> $GITHUB_ENV
+        $HOME/clang/bin/clang --version
 
     - name: 克隆内核源码
       run: |
