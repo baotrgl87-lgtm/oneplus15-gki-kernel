@@ -36,17 +36,21 @@ jobs:
 
     - name: 下载 Clang 工具链
       run: |
-        mkdir -p $HOME/clang
-        # 使用 AOSP 官方 Clang (稳定可靠)
-        CLANG_VER="r522817"
-        wget -q "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-${CLANG_VER}.tar.gz" \
-          -O /tmp/clang.tar.gz || \
-        wget -q "https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.7/clang+llvm-19.1.7-aarch64-linux-gnu.tar.xz" \
-          -O /tmp/clang.tar.gz
-        tar -xf /tmp/clang.tar.gz -C $HOME/clang --strip-components=1
-        rm /tmp/clang.tar.gz
-        echo "PATH=$HOME/clang/bin:$PATH" >> $GITHUB_ENV
-        $HOME/clang/bin/clang --version
+        # 直接用 apt 安装 LLVM 19
+        wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s 19
+        sudo apt-get install -y clang-19 lld-19 llvm-19
+        
+        # 创建软链接
+        sudo ln -sf /usr/bin/clang-19   /usr/local/bin/clang
+        sudo ln -sf /usr/bin/ld.lld-19  /usr/local/bin/ld.lld
+        sudo ln -sf /usr/bin/llvm-ar-19 /usr/local/bin/llvm-ar
+        sudo ln -sf /usr/bin/llvm-nm-19 /usr/local/bin/llvm-nm
+        sudo ln -sf /usr/bin/llvm-objcopy-19 /usr/local/bin/llvm-objcopy
+        sudo ln -sf /usr/bin/llvm-objdump-19 /usr/local/bin/llvm-objdump
+        sudo ln -sf /usr/bin/llvm-strip-19   /usr/local/bin/llvm-strip
+        
+        clang --version
+        echo "PATH=/usr/local/bin:$PATH" >> $GITHUB_ENV
 
     - name: 克隆内核源码
       run: |
