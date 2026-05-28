@@ -1,0 +1,128 @@
+name: Build OnePlus 15 GKI Kernel (SukiSU Ultra)
+
+on:
+  workflow_dispatch:
+    inputs:
+      SUKISU_VERSION:
+        description: 'SukiSU Ultra 版本 (留空=最新)'
+        required: false
+        default: ''
+      ENABLE_SUSFS:
+        description: '启用 SUSFS'
+        required: false
+        default: 'true'
+        type: boolean
+      ENABLE_BBR:
+        description: '启用 BBR'
+        required: false
+        default: 'true'
+        type: boolean
+
+env:
+  KERNEL_REPO: "https://github.com/OnePlusOSS/android_kernel_oneplus_sm8750"
+  KERNEL_BRANCH: "oneplus/sm8750_v_16.0.0"
+  AK3_REPO: "https://github.com/osm0sis/AnyKernel3"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+    - name: 安装依赖
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y bc bison build-essential ca-certificates \
+          curl flex git kmod libelf-dev libssl-dev lz4 python3 \
+          unzip wget zip gcc-aarch64-linux-gnu pahole zstd
+
+    - name: 下载 Clang 工具链
+      run: |
+        mkdir -p $HOME/clang
+        wget -q "https://github.com/ZyCromerZ/Clang/releases/download/19.0.0git-20250101-release/Clang-19.0.0git-20250101.tar.gz" -O /tmp/clang.tar.gz
+        tar -xzf /tmp/clang.tar.gz -C $HOME/clang --strip-components=1
+        echo "PATH=$HOME/clang/bin:$PATH" >> $GITHUB_ENV
+
+    - name: 克隆内核源码
+      run: |
+        git clone --depth=1 --branch ${{ env.KERNEL_BRANCH }} \
+          ${{ env.KERNEL_REPO }} kernel_source
+        echo "KERNEL_DIR=$(pwd)/kernel_source" >> $GITHUB_ENV
+
+    - name: 集成 SukiSU Ultra GKI
+      run: |
+        cd kernel_source
+        SUKI_TAG=$(curl -s https://api.github.com/repos/SukiSU-Ultra/SukiSU-Ultra/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+        echo "SukiSU 版本: $SUKI_TAG"
+        curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$SUKI_TAG"
+
+    - name: 集成 SUSFS
+      if: ${{ github.event.inputs.ENABLE_SUSFS == 'true' }}
+      run: |
+        cd kernel_source
+        git clone --depth=1 https://github.com/sidex15/susfs4ksu /tmp/susfs4ksu
+        for patch in /tmp/susfs4ksu/kernel_patches/*android16*6.12*.patch; do
+          patch -p1 < "$patch" && echo "SUSFS 补丁成功" && break
+        done
+
+    - name: 启用 BBR
+      if: ${{ github.event.inputs.ENABLE_BBR == 'true' }}
+      run: |
+        cd kernel_source
+        DEFCONFIG=$(find arch/arm64/configs -name "gki_defconfig" | head -1)
+        echo "CONFIG_TCP_CONG_BBR=y" >> $DEFCONFIG
+        echo "CONFIG_NET_SCH_FQ=y"   >> $DEFCONFIG
+
+    - name: 编译内核
+      run: |
+        cd kernel_source
+        export PATH="$HOME/clang/bin:$PATH"
+        ARGS="ARCH=arm64 LLVM=1 LLVM_IAS=1 CC=clang LD=ld.lld O=out -j$(nproc)"
+        DEFCONFIG=$(find arch/arm64/configs -name "gki_defconfig" | head -1)
+        make $ARGS $(basename $DEFCONFIG)
+        make $ARGS olddefconfig
+        make $ARGS Image
+        ls -lh out/arch/arm64/boot/Image
+        echo "KERNEL_IMAGE=$(pwd)/out/arch/arm64/boot/Image" >> $GITHUB_ENV
+
+    - name: 打包 AnyKernel3
+      run: |
+        git clone --depth=1 ${{ env.AK3_REPO }} AnyKernel3
+        cd AnyKernel3
+        cat > anykernel.sh << 'EOF'
+        properties() { '
+        kernel.string=OnePlus15 GKI SukiSU Ultra
+        do.devicecheck=1
+        do.modules=0
+        do.systemless=1
+        do.cleanup=1
+        do.cleanuponabort=0
+        device.name1=PLK110
+        device.name2=oneplus_15
+        supported.versions=16
+        '; }
+        block=/dev/block/bootdevice/by-name/boot
+        is_slot_device=1
+        ramdisk_compression=auto
+        patch_vbmeta_flag=auto
+        . tools/functions.sh
+        dump_boot; split_boot; flash_boot
+        EOF
+        cp "${{ env.KERNEL_IMAGE }}" Image
+        BUILD_DATE=$(date '+%Y%m%d-%H%M')
+        zip -r9 "../OnePlus15-GKI-SukiSU-${BUILD_DATE}.zip" . -x "*.git*"
+        echo "ZIP_NAME=OnePlus15-GKI-SukiSU-${BUILD_DATE}.zip" >> $GITHUB_ENV
+
+    - name: 上传产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: OnePlus15-GKI-${{ github.run_number }}
+        path: "*.zip"
+        retention-days: 7
+
+    - name: 发布 Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: "build-${{ github.run_number }}"
+        name: "OnePlus15 GKI SukiSU Ultra #${{ github.run_number }}"
+        files: "*.zip"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
